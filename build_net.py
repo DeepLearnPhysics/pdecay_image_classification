@@ -2,15 +2,15 @@ import tensorflow as tf
 import tensorflow.contrib.slim as slim
 import tensorflow.python.platform
 import numpy as np
-
+import sys, time
 def build(input_tensors,filters=32,trainable=True,reuse=False,debug=False):
 
     nets = []
     # Build an individual tower
-    for tensor in input_tensors:
+    for index,tensor in enumerate(input_tensors):
         prefix = ''
         if reuse:
-            prefix = tensor.name
+            prefix = 'tower%d' % index
         net = build_tower(input_tensor=tensor,filters=filters,trainable=trainable,prefix=prefix,debug=debug)
         nets.append(net)
 
@@ -20,7 +20,7 @@ def build(input_tensors,filters=32,trainable=True,reuse=False,debug=False):
     net = build_stage(input_tensor = net,
                       filters      = net.get_shape()[-1].value / 2,
                       trainable    = trainable,
-                      reuse        = reuse,
+                      reuse        = tf.AUTO_REUSE,
                       stage_prefix = 'final',
                       stride       = 2,
                       kernel       = 2)
@@ -81,5 +81,20 @@ if __name__ == '__main__':
     image0 = tf.placeholder(tf.float32, [10,64,64,1], name='image0')
     image1 = tf.placeholder(tf.float32, [10,64,64,1], name='image1')
     images = [image0,image1]
-    net    = build(images,filters=32,trainable=True,debug=True)
+
+    reuse=False
+    if 'reuse' in sys.argv:
+        reuse=True    
+    net    = build(images,filters=32,trainable=True,reuse=reuse,debug=True)
     print('Final net shape:', net.shape)
+
+    if 'save' in sys.argv:
+        # Create a session
+        sess = tf.InteractiveSession()
+        sess.run(tf.global_variables_initializer())
+        # Create a summary writer handle + save graph
+        writer=tf.summary.FileWriter('siamese_graph')
+        writer.add_graph(sess.graph)
+        writer.flush()
+        writer.close()
+
