@@ -1,8 +1,10 @@
+from resnet_module import double_resnet
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
 import tensorflow.python.platform
 import numpy as np
 import sys, time
+
 def build(input_tensors,filters=32,trainable=True,reuse=False,debug=False):
 
     nets = []

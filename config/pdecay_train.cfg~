@@ -1,14 +1,15 @@
 TrainIO: {
   Verbosity:    2
-  RandomAccess: 2
-  InputFiles:   ["/scratch/kterao/prep_pdecay/train.root"]
+  RandomAccess: 1
+  InputFiles:   ["train_pdecay.root"]  
+  #["train.root"]
   ProcessType:  ["BatchFillerImage2D","BatchFillerPDecay"]
-  ProcessName:  ["train_image0","train_label"]
+  ProcessName:  ["train_image","train_label"]
   NumThreads: 4
   NumBatchStorage: 4
 
   ProcessList: {
-    train_image0: {
+    train_image: {
       Verbosity: 2
       ImageProducer: "data"
       Channels: [0]
