@@ -8,20 +8,18 @@ import matplotlib.pyplot as plt
 import os,sys,time
 import sys
 
-# tensorflow/gpu start-up configuration
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-import tensorflow as tf
-
 TRAIN_IO_CONFIG  = './config/pdecay_train.cfg'
 TEST_IO_CONFIG   = './config/pdecay_test.cfg' 
 TRAIN_BATCH_SIZE = 50
 TEST_BATCH_SIZE  = 50
-LOGDIR           = 'log_pdecay6s'
+LOGDIR           = 'log'
 WEIGHTS          = './weights/weight'
-ITERATIONS       = 25000
+LR               = 0.001
+LOAD_FILE        = ''
+ITERATIONS       = 50000
 SAVE_SUMMARY     = 200
 SAVE_WEIGHTS     = 1000
+GPU              = 0
 
 for argv in sys.argv:
   if 'train=' in argv:
@@ -30,8 +28,17 @@ for argv in sys.argv:
     TEST_IO_CONFIG = argv.replace('test=','')
   elif 'log=' in argv:
     LOGDIR = argv.replace('log=','')
-  elif 'weight=' in argv:
+  elif 'weights=' in argv:
     WEIGHTS = argv.replace('weights=','')
+  elif 'gpu=' in argv:
+    GPU = argv.replace('gpu=','')
+  elif 'lr=' in argv:
+    LR = float(argv.replace('lr=',''))
+
+# tensorflow/gpu start-up configuration
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['CUDA_VISIBLE_DEVICES'] = str(GPU)
+import tensorflow as tf
 
 # Check log directory is empty
 train_logdir = os.path.join(LOGDIR,'train')
@@ -112,7 +119,7 @@ with tf.name_scope('accuracy'):
 with tf.name_scope('train'):
     cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=label_tensor, logits=net))
     tf.summary.scalar('cross_entropy',cross_entropy)
-    train_step = tf.train.AdamOptimizer(0.00005).minimize(cross_entropy)
+    train_step = tf.train.AdamOptimizer(LR).minimize(cross_entropy)
     
 #                                                                                                                                      
 # Step 3: weight saver & summary writer                                                                                                
@@ -130,11 +137,28 @@ writer_test=tf.summary.FileWriter(test_logdir)
 writer_test.add_graph(sess.graph)
 # Create weights saver                                                                                                                 
 saver = tf.train.Saver(max_to_keep=10, keep_checkpoint_every_n_hours=0.5)
+# Override variables if wished
+current_iteration = 0
+if LOAD_FILE:
+  vlist=[]
+  current_iteration = int((LOAD_FILE.split('-'))[-1])
+  parent_vlist = []
+  parent_vlist = tf.get_collection(tf.GraphKeys.MODEL_VARIABLES)
+  for v in parent_vlist:
+    #if v.name in self._cfg.AVOID_LOAD_PARAMS:
+    #  print('\033[91mSkipping\033[00m loading variable',v.name,'from input weight...')
+    #  continue
+    print('\033[95mLoading\033[00m variable',v.name,'from',LOAD_FILE)
+    vlist.append(v)
+    reader=tf.train.Saver(var_list=vlist)
+    reader.restore(sess,LOAD_FILE)
 
 #
 # Step 4: Run training loop
 #
-for i in range(ITERATIONS):
+for iteration in range(ITERATIONS):
+
+  if iteration < current_iteration: continue
 
   feed_dict = {}
   if train_data0 is not None: feed_dict[data_tensors[0]] = train_io.fetch_data('train_image0').data()
@@ -142,13 +166,13 @@ for i in range(ITERATIONS):
   feed_dict[label_tensor] = train_io.fetch_data('train_label').data()
   
   loss, acc, _ = sess.run([cross_entropy, accuracy, train_step], feed_dict=feed_dict)
-  print('step',i,loss,acc)
-  if (i+1)%SAVE_SUMMARY == 0:
+  print('step',iteration,loss,acc)
+  if (iteration+1)%SAVE_SUMMARY == 0:
     # Save train log
-    sys.stdout.write('Training in progress @ step %d loss %g accuracy %g          \n' % (i,loss,acc))
+    sys.stdout.write('Training in progress @ step %d loss %g accuracy %g          \n' % (iteration,loss,acc))
     sys.stdout.flush()
     s = sess.run(merged_summary, feed_dict=feed_dict)
-    writer_train.add_summary(s,i)
+    writer_train.add_summary(s,iteration)
     
     # Calculate & save test log
     test_data0 = test_io.fetch_data('test_image0')
@@ -159,21 +183,25 @@ for i in range(ITERATIONS):
     if test_data1 is not None: feed_dict[data_tensors[1]] = test_data1.data()
     feed_dict[label_tensor] = test_label.data()
     loss, acc = sess.run([cross_entropy, accuracy], feed_dict=feed_dict)
-    sys.stdout.write('Testing in progress @ step %d loss %g accuracy %g          \n' % (i,loss,acc))
+    sys.stdout.write('Testing in progress @ step %d loss %g accuracy %g          \n' % (iteration,loss,acc))
     sys.stdout.flush()
     s = sess.run(merged_summary, feed_dict=feed_dict)
-    writer_test.add_summary(s,i)
+    writer_test.add_summary(s,iteration)
     
     test_io.next()
     
   train_io.next()
     
-  if (i+1)%SAVE_WEIGHTS == 0:
-    ssf_path = saver.save(sess,WEIGHTS,global_step=i)
+  if (iteration+1)%SAVE_WEIGHTS == 0:
+    ssf_path = saver.save(sess,WEIGHTS,global_step=iteration)
     print('saved @',ssf_path)
 
 # inform log directory
 print()
 print('Run `tensorboard --logdir=%s` in terminal to see the results.' % LOGDIR)
+writer_train.flush()
+writer_test.flush()
+writer_train.close()
+writer_test.close()
 train_io.reset()
 test_io.reset()
